@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#8ed8ff">
+  <title>Blockscape — a little block-building world</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #87ceeb; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #hud { position: fixed; inset: 0; pointer-events: none; color: white; text-shadow: 0 2px 3px #17202a, 0 1px 8px #17202a; }
+    #brand { position: absolute; top: 18px; left: 20px; font-size: 15px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+    #brand span { display: block; margin-top: 3px; font-size: 11px; font-weight: 550; letter-spacing: .04em; opacity: .8; text-transform: none; }
+    #stats { position: absolute; top: 20px; right: 20px; text-align: right; font-size: 12px; line-height: 1.7; opacity: .9; }
+    #crosshair { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; transform: translate(-50%,-50%); }
+    #crosshair::before, #crosshair::after { content: ""; position: absolute; background: #fff; border: 1px solid #25313b; border-radius: 2px; }
+    #crosshair::before { width: 2px; height: 18px; left: 8px; top: 0; }
+    #crosshair::after { height: 2px; width: 18px; top: 8px; left: 0; }
+    #hotbar { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; gap: 5px; padding: 6px; border: 1px solid #ffffff72; border-radius: 9px; background: #111827a8; backdrop-filter: blur(7px); }
+    .slot { position: relative; display: grid; place-items: center; width: 48px; height: 48px; border: 2px solid #ffffff44; border-radius: 5px; background: #ffffff19; font-size: 24px; }
+    .slot.active { border-color: white; background: #ffffff38; box-shadow: 0 0 0 2px #17202a88; transform: translateY(-4px); }
+    .slot small { position: absolute; left: 4px; top: 1px; font-size: 10px; font-weight: 750; }
+    #selected-name { position: absolute; bottom: 88px; left: 50%; transform: translateX(-50%); font-size: 13px; font-weight: 700; }
+    #help { position: absolute; left: 50%; bottom: 98px; transform: translateX(-50%); max-width: min(94vw, 680px); white-space: nowrap; text-align: center; font-size: 12px; opacity: .9; }
+    #overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; background: linear-gradient(180deg, #10243b36, #07111a8c); transition: opacity .2s; }
+    #overlay.hidden { opacity: 0; pointer-events: none; }
+    .card { width: min(460px, 100%); padding: 30px; border: 1px solid #ffffff4d; border-radius: 18px; background: #111827dd; box-shadow: 0 24px 80px #06111b66; color: white; text-align: center; backdrop-filter: blur(12px); }
+    .eyebrow { color: #a7f3d0; font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { margin: 10px 0 8px; font-size: clamp(32px, 8vw, 48px); line-height: 1; letter-spacing: -.05em; }
+    .card p { margin: 0 auto 20px; max-width: 350px; color: #d3deeb; font-size: 14px; line-height: 1.55; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 18px 0 22px; text-align: left; color: #d7e2ee; font-size: 12px; }
+    .controls div { padding: 9px 10px; border-radius: 8px; background: #ffffff10; }
+    kbd { display: inline-block; min-width: 22px; padding: 2px 5px; border: 1px solid #ffffff55; border-radius: 4px; background: #ffffff16; color: white; font: inherit; font-weight: 750; text-align: center; }
+    button { border: 0; border-radius: 9px; padding: 12px 22px; background: #34d399; color: #09251b; font: inherit; font-weight: 850; cursor: pointer; }
+    button:hover { background: #6ee7b7; }
+    .note { margin-top: 14px; color: #94a3b8; font-size: 11px; }
+    @media (max-width: 560px) { #brand { top: 12px; left: 12px; } #stats { top: 12px; right: 12px; } .slot { width: 40px; height: 42px; } #hotbar { bottom: 16px; gap: 3px; } #help { bottom: 77px; white-space: normal; font-size: 10px; } #selected-name { bottom: 66px; } }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <div id="brand">Blockscape<span>a tiny block-building sandbox</span></div>
+    <div id="stats">WASD to roam · Esc to pause<br><span id="coords">x 0 · y 0 · z 0</span></div>
+    <div id="crosshair"></div>
+    <div id="help">Break blocks: left click &nbsp;·&nbsp; Place block: right click &nbsp;·&nbsp; Choose: <kbd>1</kbd>–<kbd>6</kbd></div>
+    <div id="selected-name">Grass</div>
+    <div id="hotbar" aria-label="Block selection"></div>
+  </div>
+
+  <div id="overlay">
+    <section class="card">
+      <div class="eyebrow">A small creative sandbox</div>
+      <h1>Blockscape</h1>
+      <p>Wander a colorful little voxel island, shape the landscape, and build whatever you can imagine.</p>
+      <div class="controls">
+        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> &nbsp; Move</div>
+        <div><kbd>Mouse</kbd> &nbsp; Look around</div>
+        <div><kbd>Space</kbd> &nbsp; Jump</div>
+        <div><kbd>Shift</kbd> &nbsp; Move faster</div>
+        <div><kbd>Left click</kbd> &nbsp; Break block</div>
+        <div><kbd>Right click</kbd> &nbsp; Place block</div>
+      </div>
+      <button id="start">Enter the world</button>
+      <div class="note">Best on desktop · Click the game to release your mouse</div>
+    </section>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    const overlay = document.querySelector('#overlay');
+    const startButton = document.querySelector('#start');
+    const hotbar = document.querySelector('#hotbar');
+    const selectedName = document.querySelector('#selected-name');
+    const coordsLabel = document.querySelector('#coords');
+    const blockTypes = [
+      { name: 'Grass', color: 0x62ad4d, icon: '🟩' },
+      { name: 'Dirt', color: 0x8b5a35, icon: '🟫' },
+      { name: 'Stone', color: 0x87919b, icon: '⬜' },
+      { name: 'Sand', color: 0xd9c27b, icon: '🟨' },
+      { name: 'Wood', color: 0x9a683b, icon: '🪵' },
+      { name: 'Leaves', color: 0x32854a, icon: '🌿' },
+    ];
+    let selectedType = 0;
+    blockTypes.forEach((type, i) => {
+      const slot = document.createElement('div');
+      slot.className = `slot${i === 0 ? ' active' : ''}`;
+      slot.innerHTML = `<small>${i + 1}</small>${type.icon}`;
+      slot.title = type.name;
+      hotbar.append(slot);
+    });
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x91d5f3);
+    scene.fog = new THREE.Fog(0x91d5f3, 25, 62);
+    const camera = new THREE.PerspectiveCamera(76, innerWidth / innerHeight, 0.1, 120);
+    camera.rotation.order = 'YXZ';
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    document.body.prepend(renderer.domElement);
+
+    scene.add(new THREE.HemisphereLight(0xdaf3ff, 0x6a573c, 2.0));
+    const sun = new THREE.DirectionalLight(0xfff1d0, 2.3);
+    sun.position.set(-18, 30, 12);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.left = -28; sun.shadow.camera.right = 28;
+    sun.shadow.camera.top = 28; sun.shadow.camera.bottom = -28;
+    scene.add(sun);
+
+    const cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const materials = blockTypes.map(t => new THREE.MeshStandardMaterial({ color: t.color, roughness: 0.92 }));
+    const blocks = new Map();
+    const blockMeshes = new Set();
+    const keyOf = (x, y, z) => `${x},${y},${z}`;
+    function addBlock(x, y, z, type, isTerrain = false) {
+      const key = keyOf(x, y, z);
+      if (blocks.has(key)) return null;
+      const mesh = new THREE.Mesh(cubeGeometry, materials[type]);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData = { x, y, z, type, isTerrain };
+      scene.add(mesh);
+      blocks.set(key, mesh);
+      blockMeshes.add(mesh);
+      return mesh;
+    }
+    function removeBlock(mesh) {
+      if (!mesh || mesh.userData.isTerrain) return;
+      const { x, y, z } = mesh.userData;
+      scene.remove(mesh);
+      blocks.delete(keyOf(x, y, z));
+      blockMeshes.delete(mesh);
+    }
+
+    const WORLD_RADIUS = 15;
+    const terrainHeights = new Map();
+    function terrainHeight(x, z) {
+      const r = Math.hypot(x * 0.82, z * 0.82);
+      const hill = Math.max(0, 1 - r / 17) * 3.2;
+      return Math.max(1, Math.floor(2.4 + hill + Math.sin(x * 0.43) * 0.8 + Math.cos(z * 0.37) * 0.7 + Math.sin((x + z) * 0.25) * 0.45));
+    }
+    for (let x = -WORLD_RADIUS; x <= WORLD_RADIUS; x++) {
+      for (let z = -WORLD_RADIUS; z <= WORLD_RADIUS; z++) {
+        if (Math.hypot(x, z) > WORLD_RADIUS + 0.5) continue;
+        const h = terrainHeight(x, z);
+        terrainHeights.set(`${x},${z}`, h);
+        for (let y = -2; y < h; y++) {
+          const type = y === h - 1 ? (h < 2 && Math.hypot(x, z) > 10 ? 3 : 0) : y >= h - 3 ? 1 : 2;
+          addBlock(x, y, z, type, true);
+        }
+      }
+    }
+
+    // A few simple trees make the island feel alive; they are still ordinary editable blocks.
+    for (const [tx, tz] of [[-7, -5], [7, -6], [-8, 6], [5, 8], [1, -10]]) {
+      const base = terrainHeights.get(`${tx},${tz}`) ?? 2;
+      for (let y = 0; y < 3; y++) addBlock(tx, base + y, tz, 4, true);
+      for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+        for (let dy = 2; dy <= 4; dy++) {
+          if (Math.abs(dx) + Math.abs(dz) + Math.max(0, dy - 3) < 4 && !(dx === 0 && dz === 0 && dy < 3)) addBlock(tx + dx, base + dy, tz + dz, 5, true);
+        }
+      }
+    }
+
+    // A soft, distant horizon and a bright sun complete the little outdoor scene.
+    const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(2.2, 20, 16), new THREE.MeshBasicMaterial({ color: 0xffe6a3 }));
+    sunDisc.position.set(-30, 28, -38); scene.add(sunDisc);
+
+    const player = { x: 0, y: 8, z: 12, vy: 0, yaw: 0, pitch: 0, grounded: false };
+    const eyeHeight = 1.65;
+    camera.position.set(player.x, player.y, player.z);
+    const keys = new Set();
+    const raycaster = new THREE.Raycaster();
+    raycaster.far = 6;
+    const center = new THREE.Vector2(0, 0);
+    let lastTime = performance.now();
+
+    function updateSelection(index) {
+      selectedType = (index + blockTypes.length) % blockTypes.length;
+      [...hotbar.children].forEach((el, i) => el.classList.toggle('active', i === selectedType));
+      selectedName.textContent = blockTypes[selectedType].name;
+    }
+    function currentSurface(x, z) {
+      const gx = Math.round(x), gz = Math.round(z);
+      let highest = -Infinity;
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        const bx = gx + dx, bz = gz + dz;
+        for (let y = 12; y >= -2; y--) {
+          if (blocks.has(keyOf(bx, y, bz))) { highest = Math.max(highest, y + 0.5); break; }
+        }
+      }
+      return highest === -Infinity ? -1.5 : highest;
+    }
+    function setPointerLock() { renderer.domElement.requestPointerLock?.(); }
+    startButton.addEventListener('click', setPointerLock);
+    renderer.domElement.addEventListener('click', () => { if (document.pointerLockElement !== renderer.domElement) setPointerLock(); });
+    document.addEventListener('pointerlockchange', () => overlay.classList.toggle('hidden', document.pointerLockElement === renderer.domElement));
+    document.addEventListener('mousemove', e => {
+      if (document.pointerLockElement !== renderer.domElement) return;
+      player.yaw -= e.movementX * 0.0022;
+      player.pitch = THREE.MathUtils.clamp(player.pitch - e.movementY * 0.0022, -Math.PI / 2 + 0.02, Math.PI / 2 - 0.02);
+    });
+    document.addEventListener('keydown', e => {
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+      keys.add(e.code);
+      if (e.code.startsWith('Digit')) {
+        const n = Number(e.code.slice(5)); if (n >= 1 && n <= blockTypes.length) updateSelection(n - 1);
+      }
+      if (e.code === 'Space' && player.grounded) { player.vy = 7; player.grounded = false; }
+    });
+    document.addEventListener('keyup', e => keys.delete(e.code));
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('mousedown', e => {
+      if (document.pointerLockElement !== renderer.domElement) return;
+      raycaster.setFromCamera(center, camera);
+      const hits = raycaster.intersectObjects([...blockMeshes], false);
+      if (!hits.length) return;
+      const hit = hits[0];
+      if (e.button === 0) {
+        removeBlock(hit.object);
+      } else if (e.button === 2) {
+        const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).round();
+        const { x, y, z } = hit.object.userData;
+        const px = x + normal.x, py = y + normal.y, pz = z + normal.z;
+        if (Math.abs(px - player.x) < 0.8 && Math.abs(pz - player.z) < 0.8 && py + 0.5 > player.y - eyeHeight && py - 0.5 < player.y + 0.25) return;
+        addBlock(px, py, pz, selectedType);
+      }
+    });
+
+    function tick(now) {
+      requestAnimationFrame(tick);
+      const dt = Math.min((now - lastTime) / 1000, 0.05); lastTime = now;
+      if (document.pointerLockElement === renderer.domElement) {
+        const forward = Number(keys.has('KeyW')) - Number(keys.has('KeyS'));
+        const strafe = Number(keys.has('KeyD')) - Number(keys.has('KeyA'));
+        const speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 8 : 5;
+        const length = Math.hypot(forward, strafe) || 1;
+        const dx = (Math.sin(player.yaw) * forward + Math.cos(player.yaw) * strafe) / length * speed * dt;
+        const dz = (-Math.cos(player.yaw) * forward + Math.sin(player.yaw) * strafe) / length * speed * dt;
+        const nextX = THREE.MathUtils.clamp(player.x + dx, -WORLD_RADIUS + 1, WORLD_RADIUS - 1);
+        const nextZ = THREE.MathUtils.clamp(player.z + dz, -WORLD_RADIUS + 1, WORLD_RADIUS - 1);
+        const floorNow = currentSurface(player.x, player.z);
+        const floorNext = currentSurface(nextX, nextZ);
+        if (floorNext <= floorNow + 1.05 || player.y - eyeHeight - 0.15 > floorNext) player.x = nextX;
+        const floorAfterX = currentSurface(player.x, player.z);
+        if (currentSurface(player.x, nextZ) <= floorAfterX + 1.05 || player.y - eyeHeight - 0.15 > currentSurface(player.x, nextZ)) player.z = nextZ;
+        player.vy -= 19 * dt;
+        player.y += player.vy * dt;
+        const floor = currentSurface(player.x, player.z) + eyeHeight;
+        if (player.y <= floor) { player.y = floor; player.vy = 0; player.grounded = true; }
+        camera.position.set(player.x, player.y, player.z);
+        camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
+      }
+      coordsLabel.textContent = `x ${Math.round(player.x)} · y ${Math.round(player.y - eyeHeight)} · z ${Math.round(player.z)}`;
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(tick);
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    });
+  </script>
+</body>
+</html>
